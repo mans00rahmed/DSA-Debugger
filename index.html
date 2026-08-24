@@ -681,45 +681,72 @@ def _collect_namespaces(frame):
 
 
 def probe_candidate(v, cap=SIZE_PROBE_CAP):
-    # (size, has_custom_object): has_custom_object distinguishes a real user-defined
-    # structure (nodes with __dict__) from a plain built-in container of primitives/tuples,
-    # since a stray input list or lookup table is otherwise easy to mistake for "the"
-    # structure just because it happens to have more reachable elements.
+    # (reachable_ids, has_custom_object): has_custom_object distinguishes a real
+    # user-defined structure (nodes with __dict__) from a plain built-in container of
+    # primitives/tuples, since a stray input list or lookup table is otherwise easy to
+    # mistake for "the" structure just because it happens to have more reachable elements.
+    # The full id set (not just a count) is returned so pick_root can tell when one
+    # candidate's reachable objects are entirely contained in another's -- e.g. a BFS
+    # worklist ('queue = [root]', growing and shrinking as it drains) reaches nothing that
+    # 'root' itself doesn't already reach, so it should never outrank the tree it was built
+    # from just because its size happens to fluctuate above it for a step or two.
     if is_primitive(v):
-        return 0, False
+        return set(), False
     seen = set()
     queue = [v]
-    count = 0
     has_obj = False
-    while queue and count < cap:
+    while queue and len(seen) < cap:
         o = queue.pop(0)
         oid = id(o)
         if oid in seen:
             continue
         seen.add(oid)
-        count += 1
         if not isinstance(o, (list, tuple, dict, set, frozenset, deque)):
             has_obj = True
         for _, child in generic_refs(o):
             if is_trackable(child):
                 queue.append(child)
-    return count, has_obj
+    return seen, has_obj
 
 
 _size_history = {}
 
 
+def _core_ids(v, ids):
+    # Exclude a bare container's own id from the set used for domination comparisons --
+    # it's just bookkeeping (the list/dict/deque object itself), not a reachable structural
+    # node, and including it would make e.g. a worklist 'queue = [root]' never look like a
+    # subset of 'root''s own reachable set even when every *node* it reaches is one root
+    # already reaches (the queue's own id is never part of root's reachable set).
+    if isinstance(v, (list, tuple, dict, set, frozenset, deque)):
+        return ids - {id(v)}
+    return ids
+
+
 def pick_root(frame):
     # Score each in-scope candidate as (has_custom_object, recently_changed, size) and take
-    # the lexicographic max. Rationale for each tier, found empirically by testing this
-    # against real code rather than assuming it would just work:
+    # the lexicographic max, but first drop any candidate whose reachable objects are
+    # entirely contained in another candidate's -- found by testing this against real code
+    # with a BFS worklist alongside the tree it walks ('queue = [root]', draining and
+    # refilling as construction proceeds): the worklist's size fluctuates independently of
+    # the tree's, so pure (has_object, changed, size) scoring flips the pick back and forth
+    # between the two every few steps even though the worklist never contains anything the
+    # tree doesn't already reach. Domination removes that oscillation at the source instead
+    # of trying to patch over its symptoms.
+    #
+    # Rationale for each remaining scoring tier:
     #  - has_custom_object: a real user-defined structure (nodes with __dict__) always beats
     #    a plain built-in container, even a bigger one -- otherwise an unrelated input list
     #    or lookup table can permanently outrank the actual structure being built (tuples and
     #    lists of primitives are still "trackable" so they compete on raw size otherwise).
     #  - recently_changed: within the same has_custom_object tier, a structure actively being
     #    mutated beats a static one of the same or larger size (e.g. a small growing stack
-    #    vs. a bigger constant lookup dict defined once and never touched again).
+    #    vs. a bigger constant lookup dict defined once and never touched again). Only a
+    #    genuine size change relative to THIS candidate's own last-seen size counts -- a
+    #    candidate's very first appearance must not win this tier just for being new, or
+    #    every brand-new, still-isolated object (e.g. 'self' while its own __init__ is still
+    #    running, before it's linked into anything) would win it over an already-large,
+    #    stable structure purely by having no history yet.
     #  - size: final tiebreaker.
     # Ties after all three still favor continuity with the previous pick, then outer scope.
     namespaces = _collect_namespaces(frame)
@@ -729,21 +756,43 @@ def pick_root(frame):
             if name.startswith('__'):
                 continue
             if is_trackable(v):
-                size, has_obj = probe_candidate(v)
+                ids, has_obj = probe_candidate(v)
+                size = len(ids)
                 key = (name, depth)
-                changed = _size_history.get(key) != size
-                candidates.append((name, depth, v, has_obj, changed, size))
-    new_history = {(name, depth): size for (name, depth, v, has_obj, changed, size) in candidates}
+                changed = key in _size_history and _size_history[key] != size
+                candidates.append((name, depth, v, has_obj, changed, size, _core_ids(v, ids)))
+    new_history = {(name, depth): size for (name, depth, v, has_obj, changed, size, core) in candidates}
     _size_history.clear()
     _size_history.update(new_history)
     if not candidates:
         _root_pick['name'] = None
         _root_pick['scope'] = None
         return None
-    best_score = max((c[3], c[4], c[5]) for c in candidates)
-    tied = [c for c in candidates if (c[3], c[4], c[5]) == best_score]
+
+    def is_container(v):
+        return isinstance(v, (list, tuple, dict, set, frozenset, deque))
+
+    dominated = set()
+    for i, a in enumerate(candidates):
+        for j, b in enumerate(candidates):
+            if i == j or not a[6] or not b[6]:
+                continue
+            if a[6] < b[6]:  # proper subset -- b reaches strictly more
+                dominated.add(i)
+                break
+            # Equal reachable sets: a bare container (e.g. a BFS worklist 'queue = [root]')
+            # that happens to wrap the exact same object(s) a plain variable already points
+            # to shouldn't out-rank that variable just because it's a newer name in scope --
+            # it isn't reaching anything new, just re-referencing the same node(s).
+            if a[6] == b[6] and is_container(a[2]) and not is_container(b[2]):
+                dominated.add(i)
+                break
+    survivors = [c for i, c in enumerate(candidates) if i not in dominated] or candidates
+
+    best_score = max((c[3], c[4], c[5]) for c in survivors)
+    tied = [c for c in survivors if (c[3], c[4], c[5]) == best_score]
     if len(tied) > 1 and _root_pick['name'] is not None:
-        for (name, depth, v, has_obj, changed, size) in tied:
+        for (name, depth, v, has_obj, changed, size, core) in tied:
             if name == _root_pick['name'] and depth == _root_pick['scope']:
                 _root_pick['name'], _root_pick['scope'] = name, depth
                 return v
