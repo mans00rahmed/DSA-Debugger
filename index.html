@@ -316,7 +316,7 @@
     cursor:pointer;}
   #ideDock:hover{border-color:var(--green);color:var(--green);}
 
-  #nodeTip{position:fixed;z-index:70;pointer-events:none;opacity:0;transform:translateY(3px);
+  #nodeTip{max-width:340px;white-space:normal;position:fixed;z-index:70;pointer-events:none;opacity:0;transform:translateY(3px);
     transition:opacity .12s,transform .12s;background:#fff;color:#08090B;font-family:var(--mono);font-weight:600;
     font-size:11px;padding:6px 10px;border-radius:7px;white-space:nowrap;}
   #nodeTip.on{opacity:1;transform:none;}
@@ -369,6 +369,43 @@
   .array-cell.created .array-val{border-color:var(--amber);
     box-shadow:0 0 22px rgba(255,192,97,.45);animation:bornNode .42s cubic-bezier(.2,.9,.3,1);}
   .legend .k-new i{background:rgba(255,192,97,.2);border-color:var(--amber);}
+
+  /* unattached-variable rail (HTML, never overlaps the diagram) */
+  #varRail{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;align-items:center;max-width:min(100%,760px);}
+  #varRail:empty{display:none;}
+  #varRail .chip{display:inline-flex;align-items:center;gap:7px;padding:5px 10px;border-radius:999px;
+    font-family:var(--mono);font-size:11px;cursor:help;background:#171A1F;border:1px solid #4C5561;
+    transition:border-color .16s,box-shadow .16s;}
+  #varRail .chip:hover{box-shadow:0 0 14px -4px rgba(255,255,255,.25);}
+  #varRail .chip b{font-weight:700;color:var(--dim);}
+  #varRail .chip em{font-style:normal;color:var(--faint);}
+  #varRail .chip-value{background:#221D12;border-color:var(--amber);}
+  #varRail .chip-value b{color:var(--amber);} #varRail .chip-value em{color:#E4CB9B;}
+  #varRail .chip-offscreen{background:#1D1728;border-color:var(--violet);}
+  #varRail .chip-offscreen b{color:var(--violet);}
+  #varRail .chip-global b{color:var(--blue);}
+  #varRail .chip-global{border-color:var(--blue);background:#12212A;}
+  #varRail .chip .stub{display:inline-block;width:14px;height:1px;background:#6E7684;position:relative;}
+  #varRail .chip .stub::after{content:"";position:absolute;right:0;top:-4px;width:1px;height:9px;background:#6E7684;}
+
+  /* variable pins on the canvas */
+  .ptr-pin{cursor:help;}
+  .ptr-pin .pin-box{fill:#221D12;stroke:var(--amber);stroke-width:1.5;}
+  .ptr-pin .pin-text{fill:var(--amber);font-family:var(--mono);font-size:11px;font-weight:700;
+    text-anchor:middle;dominant-baseline:central;pointer-events:none;}
+  .ptr-pin .ptr-line{stroke:var(--amber);stroke-width:2;stroke-dasharray:4 3;}
+  .ptr-pin .ptr-stub{stroke:#6E7684;stroke-width:2;}
+  .ptr-pin .pin-null{fill:var(--faint);font-family:var(--mono);font-size:10px;
+    dominant-baseline:central;pointer-events:none;}
+  .ptr-pin.ptr-global .pin-box{stroke:var(--blue);fill:#12212A;}
+  .ptr-pin.ptr-global .pin-text{fill:var(--blue);}
+  .ptr-pin.ptr-global .ptr-line{stroke:var(--blue);}
+  .ptr-pin.ptr-null .pin-box{stroke:#4C5561;fill:#171A1F;}
+  .ptr-pin.ptr-null .pin-text{fill:var(--dim);}
+  .ptr-pin.ptr-offscreen .pin-box{stroke:var(--violet);fill:#1D1728;}
+  .ptr-pin.ptr-offscreen .pin-text{fill:var(--violet);}
+  .ptr-pin:hover .pin-box{filter:drop-shadow(0 0 12px rgba(255,192,97,.55));}
+  .legend .k-var i{background:#221D12;border-color:var(--amber);}
 
   /* memory view */
   #globalsList{padding:2px 14px 12px;font-family:var(--mono);font-size:11.5px;max-height:170px;overflow-y:auto;}
@@ -434,6 +471,7 @@
         <div id="treeScroll">
           <div id="emptyMsg" class="empty-msg">paste code and hit Run to begin</div>
           <div id="structInner" style="display:none;">
+            <div id="varRail"></div>
             <div id="arrayRow"></div>
             <svg id="treeSvg"></svg>
           </div>
@@ -441,6 +479,7 @@
         <div class="legend">
           <span class="k-now"><i></i>current</span>
           <span class="k-path"><i></i>on path</span>
+          <span class="k-var"><i></i>variable pointer</span>
           <span class="k-new"><i></i>just created</span>
           <span class="k-seen"><i></i>visited</span>
           <span>drag to pan · drag a node to move it · ⌘/ctrl+wheel to zoom</span>
@@ -1202,6 +1241,40 @@ def heap_objects(frame):
     return out
 
 
+def collect_pointers(frame, snap):
+    """Every variable visible right now, and which drawn node it references.
+    target = node key when the variable points at a drawn node,
+             None when it points at nothing drawable (None / not in the picture)."""
+    node_ids = set(snap['nodes'].keys()) if (snap and snap.get('nodes')) else set()
+    out = []
+    seen = set()
+    sources = [('local', frame.f_locals)]
+    if frame.f_globals is user_globals and frame.f_locals is not user_globals:
+        sources.append(('global', user_globals))
+    for scope, src in sources:
+        for name, v in list(src.items()):
+            if name.startswith('__') or name in seen or _is_definition(v):
+                continue
+            seen.add(name)
+            key = str(id(v))
+            target = key if key in node_ids else None
+            if v is None:
+                kind = 'null'
+            elif target is not None:
+                kind = 'ref'
+            elif is_primitive(v):
+                kind = 'value'
+            else:
+                kind = 'offscreen'
+            out.append({
+                'name': name, 'scope': scope, 'target': target,
+                'kind': kind, 'value': _disp(v), 'type': type(v).__name__,
+            })
+            if len(out) >= 24:
+                return out
+    return out
+
+
 def frame_active_ids(frame, node_id_set):
     out = []
     for name, v in frame.f_locals.items():
@@ -1261,6 +1334,7 @@ def tracer(frame, event, arg):
             'depth': _user_depth(frame),
             'globals': safe_globals(),
             'objects': heap_objects(frame),
+            'pointers': collect_pointers(frame, snap),
         }
         if event == 'call':
             try:
@@ -1330,6 +1404,7 @@ const stepCaption = document.getElementById('stepCaption');
 const callStack = document.getElementById('callStack');
 const globalsList = document.getElementById('globalsList');
 const heapList = document.getElementById('heapList');
+const varRail = document.getElementById('varRail');
 const objCount = document.getElementById('objCount');
 
 const cm = CodeMirror.fromTextArea(document.getElementById('codeInput'), {
@@ -1613,6 +1688,7 @@ function renderTree(snap, activeKey, pathKeys, visitedKeys){
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class', cls);
     g.setAttribute('data-id', idStr);
+    g.setAttribute('data-tip', 'value ' + n.value);
     g.style.transform = `translate(${p.x}px,${p.y}px)`;
     g.innerHTML = `<circle class="node-circle" r="19"></circle><text class="node-text" y="1">${escapeHtml(String(n.value))}</text>`;
     treeSvg.appendChild(g);
@@ -1669,6 +1745,7 @@ function renderLinkedList(struct, activeKey, pathKeys, visitedKeys){
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class', cls);
     g.setAttribute('data-id', idStr);
+    g.setAttribute('data-tip', 'value ' + n.value);
     g.style.transform = `translate(${p.x}px,${p.y}px)`;
     g.innerHTML = `<rect class="node-rect" x="-28" y="-18" width="56" height="36" rx="8"></rect><text class="node-text" y="1">${escapeHtml(String(n.value))}</text>`;
     treeSvg.appendChild(g);
@@ -1722,6 +1799,7 @@ function renderGraph(struct, activeKey, pathKeys, visitedKeys){
     const g = document.createElementNS('http://www.w3.org/2000/svg','g');
     g.setAttribute('class', cls);
     g.setAttribute('data-id', String(id));
+    g.setAttribute('data-tip', 'value ' + node.value);
     g.style.transform = `translate(${p.x}px,${p.y}px)`;
     g.innerHTML = `<circle class="node-circle" r="19"></circle><text class="node-text" y="1">${escapeHtml(String(node.value))}</text>`;
     treeSvg.appendChild(g);
@@ -1742,6 +1820,10 @@ function arrayCellsHtml(struct, activeKey, pathKeys, visitedKeys){
 function renderArrayRow(struct, activeKey, pathKeys, visitedKeys){
   const cells = arrayCellsHtml(struct, activeKey, pathKeys, visitedKeys);
   arrayRow.innerHTML = cells.map(c=>c.html).join('');
+  arrayRow.querySelectorAll('.array-cell').forEach((c,idx)=>{
+    const v = struct.items[idx];
+    c.setAttribute('data-tip', `index ${idx} = ${v}`);
+  });
 }
 
 function renderQueueRow(struct, activeKey, pathKeys, visitedKeys){
@@ -1775,6 +1857,7 @@ function renderMappingRow(struct, activeKey, pathKeys, visitedKeys){
 }
 
 function showEmptyMessage(msg){
+  if (varRail) varRail.innerHTML = '';
   emptyMsg.textContent = msg;
   emptyMsg.style.display = 'block';
   structInner.style.display = 'none';
@@ -1784,6 +1867,91 @@ function showEmptyMessage(msg){
 function clearEmptyMessage(){
   emptyMsg.style.display = 'none';
   structInner.style.display = 'flex';
+}
+
+/* Variable pins: one chip per variable in scope. Chips that reference a drawn
+   node hang above it with an arrow; unattached ones park in a rail at the top
+   left with a null/off-picture marker. */
+function renderPointers(step){
+  if (!treeSvg || treeSvg.style.display === 'none') return;
+  const ptrs = step.pointers || [];
+  if (!ptrs.length) return;
+
+  varRail.innerHTML = '';
+  const CHW = 9, PIN_H = 20, LIFT = 46;
+  const byTarget = new Map();
+  const loose = [];
+  ptrs.forEach(p => {
+    if (p.target){
+      if (!byTarget.has(p.target)) byTarget.set(p.target, []);
+      byTarget.get(p.target).push(p);
+    } else loose.push(p);
+  });
+
+  const vb = (treeSvg.getAttribute('viewBox') || '0 0 200 200').split(/\s+/).map(Number);
+  let minY = 0, maxX = vb[2] || 200;
+  // widest attached pin can overhang the diagram horizontally
+  byTarget.forEach(list => list.forEach(p => { maxX = Math.max(maxX, vb[2] || 0); }));
+
+  const pin = (p, x, y, target) => {
+    const w = Math.max(38, p.name.length * CHW + 18);
+    const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+    g.setAttribute('class', 'ptr-pin ptr-' + p.kind + (p.scope === 'global' ? ' ptr-global' : ''));
+    if (target) g.setAttribute('data-target', target);
+    g.setAttribute('data-tip', p.name + ' = ' + p.value + '  ·  ' + p.type + ' · ' + p.scope);
+    g.style.transform = `translate(${x}px,${y}px)`;
+    let inner = `<rect class="pin-box" x="${-w/2}" y="${-PIN_H/2}" width="${w}" height="${PIN_H}" rx="${PIN_H/2}"></rect>` +
+      `<text class="pin-text" y="1">${escapeHtml(p.name)}</text>`;
+    if (target){
+      inner = `<line class="ptr-line" x1="0" y1="${PIN_H/2}" x2="0" y2="${LIFT - 21}" marker-end="url(#ptrhead)"></line>` + inner;
+    } else if (p.kind === 'null'){
+      inner += `<line class="ptr-stub" x1="${w/2}" y1="0" x2="${w/2 + 16}" y2="0"></line>` +
+        `<line class="ptr-stub" x1="${w/2 + 16}" y1="-7" x2="${w/2 + 16}" y2="7"></line>` +
+        `<text class="pin-null" x="${w/2 + 24}" y="1">None</text>`;
+    } else {
+      inner += `<text class="pin-null" x="${w/2 + 8}" y="1">${escapeHtml(p.value)}</text>`;
+    }
+    g.innerHTML = inner;
+    treeSvg.appendChild(g);
+    return g;
+  };
+
+  if (!treeSvg.querySelector('#ptrhead')){
+    const defs = document.createElementNS('http://www.w3.org/2000/svg','defs');
+    defs.innerHTML = '<marker id="ptrhead" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto"><path d="M0,0 L7,3.5 L0,7 z" fill="var(--amber)"></path></marker>';
+    treeSvg.insertBefore(defs, treeSvg.firstChild);
+  }
+
+  byTarget.forEach((list, id) => {
+    const node = treeSvg.querySelector(`.node-g[data-id="${id}"]`);
+    if (!node) return;
+    const m = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(node.style.transform || '');
+    const nx = m ? parseFloat(m[1]) : 0, ny = m ? parseFloat(m[2]) : 0;
+    list.forEach((p, k) => {
+      const y = ny - LIFT - k * (PIN_H + 6);
+      minY = Math.min(minY, y - PIN_H);
+      pin(p, nx, y, id);
+    });
+  });
+
+  if (loose.length){
+    varRail.innerHTML = loose.map(p => {
+      const tail = p.kind === 'null' ? '<i class="stub"></i><em>None</em>'
+        : `<em>${escapeHtml(p.value)}</em>`;
+      return `<span class="chip chip-${p.kind}${p.scope === 'global' ? ' chip-global' : ''}" ` +
+        `data-tip="${escapeHtml(p.name + ' = ' + p.value + '  ·  ' + p.type + ' · ' + p.scope)}">` +
+        `<b>${escapeHtml(p.name)}</b>${tail}</span>`;
+    }).join('');
+  }
+
+  // grow the viewBox so pins above the root and the loose rail stay visible
+  if (minY < 0 || maxX > (vb[2] || 0)){
+    const pad = 10;
+    const nvb = [vb[0], Math.min(vb[1], minY - pad), Math.max(vb[2], maxX), (vb[3] || 200) + Math.max(0, -(minY - pad))];
+    treeSvg.setAttribute('viewBox', nvb.join(' '));
+    treeSvg.setAttribute('width', nvb[2]);
+    treeSvg.setAttribute('height', nvb[3]);
+  }
 }
 
 function renderStruct(step, i){
@@ -1845,7 +2013,7 @@ function renderMemory(step, prev){
   globalsList.innerHTML = gl.length
     ? gl.map(([k,v])=>{
         const ch = prevG.has(k) && prevG.get(k) !== v;
-        return `<div class="row${ch ? ' hit' : ''}"><span>${escapeHtml(k)}</span><b>${escapeHtml(String(v))}</b></div>`;
+        return `<div class="row${ch ? ' hit' : ''}" data-tip="${escapeHtml(k + ' = ' + v)}"><span>${escapeHtml(k)}</span><b>${escapeHtml(String(v))}</b></div>`;
       }).join('')
     : '<div class="row"><span>(no globals yet)</span></div>';
 
@@ -1858,7 +2026,7 @@ function renderMemory(step, prev){
         const attrs = o.attrs.map(([k,v])=>{
           const pm = prevO.get(o.id);
           const ch = pm && pm.has(k) && pm.get(k) !== v;
-          return `<div class="row${ch ? ' hit' : ''}"><span>${escapeHtml(k)}</span><b>${escapeHtml(String(v))}</b></div>`;
+          return `<div class="row${ch ? ' hit' : ''}" data-tip="${escapeHtml(o.type + '.' + k + ' = ' + v)}"><span>${escapeHtml(k)}</span><b>${escapeHtml(String(v))}</b></div>`;
         }).join('');
         return `<div class="obj${isNew ? ' born' : ''}"><div class="obj-head">${escapeHtml(o.type)}` +
           `<span class="addr">#${escapeHtml(o.id.slice(-5))}</span></div>${attrs || '<div class="row"><span>(no attributes)</span></div>'}</div>`;
@@ -1887,6 +2055,7 @@ function showStep(i){
   renderLocals(step.locals, step.func);
   renderMemory(step, i > 0 ? state.steps[i-1] : null);
   renderStruct(step, i);
+  renderPointers(step);
 
   // flash whatever came into existence on this step
   const created = createdKeysAt(i);
@@ -2172,13 +2341,19 @@ showEmptyMessage('paste code and hit Run to begin');
   let nd = null;
   svg.addEventListener('pointerdown', e => {
     const g = e.target.closest('.node-g'); if (!g) return;
+    const pins = Array.prototype.map.call(
+      svg.querySelectorAll('.ptr-pin[data-target="' + g.getAttribute('data-id') + '"]'),
+      p => {
+        const pm = /translate\(([-\d.]+)px,\s*([-\d.]+)px\)/.exec(p.style.transform || '');
+        return { el: p, ox: pm ? parseFloat(pm[1]) : 0, oy: pm ? parseFloat(pm[2]) : 0 };
+      });
     e.stopPropagation();
     const p = readXY(g), ends = [];
     svg.querySelectorAll('line').forEach(ln => {
       if (near(+ln.getAttribute('x1'), p.x) && near(+ln.getAttribute('y1'), p.y)) ends.push([ln,'x1','y1']);
       if (near(+ln.getAttribute('x2'), p.x) && near(+ln.getAttribute('y2'), p.y)) ends.push([ln,'x2','y2']);
     });
-    nd = { g, ends, sx:e.clientX, sy:e.clientY, ox:p.x, oy:p.y };
+    nd = { g, ends, pins, sx:e.clientX, sy:e.clientY, ox:p.x, oy:p.y };
     g.classList.add('dragging'); svg.setPointerCapture(e.pointerId);
   });
   svg.addEventListener('pointermove', e => {
@@ -2186,23 +2361,33 @@ showEmptyMessage('paste code and hit Run to begin');
     const x = nd.ox + (e.clientX - nd.sx) / view.s, y = nd.oy + (e.clientY - nd.sy) / view.s;
     nd.g.style.transform = 'translate(' + x + 'px,' + y + 'px)';
     nd.ends.forEach(([ln,ax,ay]) => { ln.setAttribute(ax, x); ln.setAttribute(ay, y); });
+    const dx = x - nd.ox, dy = y - nd.oy;
+    nd.pins.forEach(p => {
+      p.el.style.transform = 'translate(' + (p.ox + dx) + 'px,' + (p.oy + dy) + 'px)';
+    });
   });
   const endNode = () => { if (nd) { nd.g.classList.remove('dragging'); nd = null; } };
   svg.addEventListener('pointerup', endNode);
   svg.addEventListener('pointercancel', endNode);
 
+  /* one tooltip for anything carrying data-tip */
   const tip = document.createElement('div'); tip.id = 'nodeTip'; document.body.appendChild(tip);
-  svg.addEventListener('pointerover', e => {
-    const g = e.target.closest('.node-g'); if (!g) return;
-    const t = g.querySelector('text');
-    tip.textContent = 'value ' + (t ? t.textContent : ''); tip.classList.add('on');
+  const tipFor = t => (t && t.closest) ? t.closest('[data-tip]') : null;
+  document.addEventListener('pointerover', e => {
+    const el = tipFor(e.target);
+    if (!el) return;
+    tip.textContent = el.getAttribute('data-tip');
+    tip.classList.add('on');
   });
-  svg.addEventListener('pointermove', e => {
+  document.addEventListener('pointermove', e => {
     if (!tip.classList.contains('on')) return;
-    tip.style.left = (e.clientX + 14) + 'px'; tip.style.top = (e.clientY - 32) + 'px';
+    if (!tipFor(e.target)) { tip.classList.remove('on'); return; }
+    const w = tip.offsetWidth || 120;
+    tip.style.left = Math.min(innerWidth - w - 10, e.clientX + 14) + 'px';
+    tip.style.top = Math.max(6, e.clientY - 34) + 'px';
   });
-  svg.addEventListener('pointerout', e => {
-    if (!e.relatedTarget || !e.relatedTarget.closest || !e.relatedTarget.closest('.node-g')) tip.classList.remove('on');
+  document.addEventListener('pointerout', e => {
+    if (!tipFor(e.relatedTarget)) tip.classList.remove('on');
   });
 })();
 </script>
