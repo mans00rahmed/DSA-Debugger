@@ -89,7 +89,7 @@
   header p{margin:0 0 0 6px;font-size:11.5px;color:var(--faint);line-height:1.4;max-width:44ch;
     border-left:1px solid var(--line);padding-left:14px;}
   @media (max-width:1100px){header p{display:none;}}
-  #pyStatus{margin-left:auto;font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;color:var(--dim);
+  #pyStatus{margin-left:8px;font-family:var(--mono);font-size:10.5px;letter-spacing:.02em;color:var(--dim);
     background:var(--card);border:1px solid var(--line);border-radius:999px;padding:5px 12px;
     display:inline-flex;align-items:center;gap:8px;transition:color .2s,border-color .2s,background .2s;}
   #pyStatus::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;
@@ -102,10 +102,57 @@
   @keyframes blink{0%,100%{opacity:1}50%{opacity:.2}}
 
   /* ── shell ── */
-  main.grid{flex:1;display:grid;grid-template-columns:1fr 344px;gap:12px;padding:12px;min-height:0;overflow:hidden;}
-  @media (max-width:1080px){main.grid{grid-template-columns:1fr;overflow:auto;}.app{height:auto;}}
-  .stage{display:flex;flex-direction:column;gap:12px;min-height:0;}
-  .side{display:flex;flex-direction:column;gap:10px;min-height:0;overflow-y:auto;padding-right:2px;}
+  main.grid{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:12px;padding:12px;
+    min-height:0;overflow:hidden;}
+
+  header button.top-run{padding:7px 14px;font-size:12px;flex-shrink:0;width:auto;margin-left:auto;
+    white-space:nowrap;line-height:1.2;}
+  header{flex-wrap:wrap;}
+  header h1,header p{min-width:0;}
+  #pyStatus{flex-shrink:0;white-space:nowrap;}
+
+  /* tablet: sidebar narrows */
+  @media (max-width:1240px){
+    main.grid{grid-template-columns:minmax(0,1fr) 300px;}
+  }
+  /* stacked: stage on top, sidebar flows below, whole page scrolls */
+  @media (max-width:1080px){
+    .app{height:auto;min-height:0;}
+    main.grid{grid-template-columns:minmax(0,1fr);overflow:visible;padding:10px;}
+    .stage{min-height:0;}
+    .side{overflow:visible;max-height:none;}
+    .code-stage{flex:none;height:min(52vh,420px);}
+    .tree-panel{flex:none;min-height:340px;}
+    pre#codeView{font-size:19px;}
+    #watchList,#globalsList,#heapList,#traceLog{max-height:none;}
+  }
+  /* phone */
+  @media (max-width:680px){
+    header{height:auto;flex-wrap:wrap;gap:9px;padding:10px 12px;}
+    header h1{font-size:14px;width:100%;}
+    #pyStatus{margin-left:0;}
+    header button.top-run{order:3;margin-left:0;}
+    main.grid{padding:8px;gap:9px;}
+    pre#codeView{font-size:16px;line-height:1.55;}
+    pre#codeView .line{padding:2px 12px 2px 6px;}
+    #stepCaption{font-size:12.5px;padding:10px 12px;}
+    .code-stage{height:min(46vh,320px);}
+    .tree-panel{min-height:280px;}
+    #treeScroll{padding:16px;}
+    #transport{padding:9px 10px;gap:7px;}
+    #transport button{flex:1 1 auto;font-size:11.5px;padding:9px 10px;}
+    .legend{font-size:8.5px;gap:10px;padding:8px 10px;}
+    .legend span:last-child{display:none;}
+    #canvasTools{right:8px;bottom:46px;}
+    .mslot{min-width:44px;} .mslot .mval{height:40px;font-size:13px;padding:0 8px;}
+    .bucket .bkey,.bucket .bval{height:38px;font-size:12px;padding:0 9px;}
+    .struct-label .note{display:none;}
+    .CodeMirror{height:150px;}
+    #ideWindow{width:96vw;height:88vh;}
+    .seo-content{padding:40px 16px 16px;font-size:14px;}
+  }
+  .stage{display:flex;flex-direction:column;gap:12px;min-height:0;min-width:0;}
+  .side{display:flex;flex-direction:column;gap:10px;min-height:0;min-width:0;overflow-y:auto;padding-right:2px;}
 
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden;}
   .card-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 14px;
@@ -370,6 +417,56 @@
     box-shadow:0 0 22px rgba(255,192,97,.45);animation:bornNode .42s cubic-bezier(.2,.9,.3,1);}
   .legend .k-new i{background:rgba(255,192,97,.2);border-color:var(--amber);}
 
+  /* labelled structure blocks — several live structures at once */
+  #structStack{display:flex;flex-direction:column;gap:18px;align-items:center;width:100%;}
+  #structStack:empty{display:none;}
+  .struct-block{display:flex;flex-direction:column;gap:9px;align-items:center;max-width:100%;}
+  .struct-label{display:flex;align-items:baseline;gap:9px;font-family:var(--mono);font-size:11px;}
+  .struct-label b{color:var(--text);font-weight:700;font-size:13px;}
+  .struct-label .kind{color:var(--green);background:rgba(34,211,122,.12);border-radius:999px;
+    padding:2px 9px;font-size:9px;letter-spacing:.12em;text-transform:uppercase;}
+  .struct-block.primary .struct-label b{color:var(--green);}
+  .struct-label .count{color:var(--faint);font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;}
+  .struct-cells{display:flex;align-items:flex-end;gap:8px;flex-wrap:wrap;justify-content:center;}
+  .struct-empty{font-family:var(--mono);font-size:11px;color:var(--faint);letter-spacing:.14em;
+    text-transform:uppercase;padding:12px 20px;border:1px dashed var(--line);border-radius:9px;}
+  .struct-label .note{color:var(--faint);font-size:9.5px;letter-spacing:.04em;}
+
+  /* contiguous memory run: slots share walls inside one frame */
+  .mem-run{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;}
+  .mem-run .mend{font-family:var(--mono);font-size:9px;letter-spacing:.14em;text-transform:uppercase;
+    color:var(--faint);}
+  .mem-strip{display:flex;border:2px solid #4A5462;border-radius:8px;overflow:hidden;
+    background:#12151A;box-shadow:inset 0 0 0 1px rgba(0,0,0,.4);}
+  .mslot{display:flex;flex-direction:column;align-items:stretch;min-width:54px;cursor:help;
+    border-right:1px solid #333B46;transition:background .18s;}
+  .mslot:last-child{border-right:none;}
+  .mslot:hover{background:rgba(255,255,255,.045);}
+  .mslot .mval{display:flex;align-items:center;justify-content:center;height:48px;padding:0 11px;
+    font-family:var(--mono);font-size:15px;font-weight:700;color:var(--text);transition:color .18s;}
+  .mslot .moff{text-align:center;font-family:var(--mono);font-size:9px;color:var(--faint);
+    padding:3px 0 4px;border-top:1px solid #333B46;background:rgba(0,0,0,.28);letter-spacing:.06em;}
+  .mslot.active{background:var(--green);}
+  .mslot.active .mval{color:#052014;}
+  .mslot.active .moff{color:#0A3D22;background:rgba(0,0,0,.14);border-top-color:rgba(5,32,20,.25);}
+  .mslot.created .mval{color:var(--amber);}
+
+  /* hash table: discrete buckets, key -> value */
+  .mem-buckets{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;}
+  .bucket{display:flex;align-items:stretch;cursor:help;border:2px dashed #4A5462;border-radius:9px;
+    background:#12151A;overflow:hidden;transition:border-color .18s,box-shadow .18s;}
+  .bucket:hover{border-color:var(--green);}
+  .bucket .bkey{display:flex;align-items:center;padding:0 11px;height:44px;font-family:var(--mono);
+    font-size:12px;font-weight:700;color:var(--blue);background:rgba(92,200,255,.08);}
+  .bucket .bkey.solo{color:var(--text);background:transparent;font-size:14px;}
+  .bucket .barrow{display:flex;align-items:center;padding:0 7px;color:var(--faint);font-size:13px;}
+  .bucket .bval{display:flex;align-items:center;padding:0 12px;height:44px;font-family:var(--mono);
+    font-size:15px;font-weight:700;color:var(--text);}
+  .bucket.active{border-style:solid;border-color:var(--green);box-shadow:0 0 20px -6px rgba(34,211,122,.6);}
+  .bucket.active .bval{color:var(--green);}
+
+  .array-cell.mini .array-val{min-width:48px;height:48px;font-size:14px;}
+
   /* unattached-variable rail (HTML, never overlaps the diagram) */
   #varRail{display:flex;flex-wrap:wrap;gap:7px;justify-content:center;align-items:center;max-width:min(100%,760px);}
   #varRail:empty{display:none;}
@@ -449,7 +546,7 @@
   <header>
     <h1>Data Structure <span>Debugger</span></h1>
     <p>runs your actual Python code and visualizes the real structure state, line by line</p>
-    <span id="pyStatus">loading python…</span>
+    <button id="runBtnTop" class="primary top-run" disabled>▶ Run</button><span id="pyStatus">loading python…</span>
   </header>
   <main class="grid">
     <section class="stage">
@@ -473,6 +570,7 @@
           <div id="structInner" style="display:none;">
             <div id="varRail"></div>
             <div id="arrayRow"></div>
+            <div id="structStack"></div>
             <svg id="treeSvg"></svg>
           </div>
         </div>
@@ -1241,7 +1339,38 @@ def heap_objects(frame):
     return out
 
 
-def collect_pointers(frame, snap):
+def collect_structs(frame, primary_snap):
+    """A snapshot for EVERY structure visible in this frame, keyed by variable name,
+    so a dict and a list that are both live are both drawn."""
+    out = []
+    seen_ids = set()
+    sources = [frame.f_locals]
+    if frame.f_globals is user_globals and frame.f_locals is not user_globals:
+        sources.append(user_globals)
+    for src in sources:
+        for name, v in list(src.items()):
+            if name.startswith('__') or _is_definition(v) or is_primitive(v):
+                continue
+            if id(v) in seen_ids:
+                continue
+            try:
+                snap = classify_and_snapshot(v)
+            except Exception:
+                snap = None
+            if not snap:
+                continue
+            seen_ids.add(id(v))
+            out.append({
+                'name': name,
+                'snap': snap,
+                'primary': bool(primary_snap) and snap == primary_snap,
+            })
+            if len(out) >= 6:
+                return out
+    return out
+
+
+def collect_pointers(frame, snap, drawn_names=()):
     """Every variable visible right now, and which drawn node it references.
     target = node key when the variable points at a drawn node,
              None when it points at nothing drawable (None / not in the picture)."""
@@ -1264,6 +1393,8 @@ def collect_pointers(frame, snap):
                 kind = 'ref'
             elif is_primitive(v):
                 kind = 'value'
+            elif name in drawn_names:
+                kind = 'drawn'
             else:
                 kind = 'offscreen'
             out.append({
@@ -1334,8 +1465,10 @@ def tracer(frame, event, arg):
             'depth': _user_depth(frame),
             'globals': safe_globals(),
             'objects': heap_objects(frame),
-            'pointers': collect_pointers(frame, snap),
+            'structs': collect_structs(frame, snap),
         }
+        rec['pointers'] = collect_pointers(
+            frame, snap, set(s['name'] for s in rec['structs']))
         if event == 'call':
             try:
                 names = frame.f_code.co_varnames[:frame.f_code.co_argcount]
@@ -1405,6 +1538,7 @@ const callStack = document.getElementById('callStack');
 const globalsList = document.getElementById('globalsList');
 const heapList = document.getElementById('heapList');
 const varRail = document.getElementById('varRail');
+const structStack = document.getElementById('structStack');
 const objCount = document.getElementById('objCount');
 
 const cm = CodeMirror.fromTextArea(document.getElementById('codeInput'), {
@@ -1442,7 +1576,10 @@ async function initPyodide(){
 }
 initPyodide();
 
-function escapeHtml(s){ return s.replace(/&/g,'&amp;').replace(/</g,'&lt;'); }
+function escapeHtml(s){
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
 
 function scrollIntoContainer(el, container, padding){
   if (!el || !container) return;
@@ -1856,7 +1993,94 @@ function renderMappingRow(struct, activeKey, pathKeys, visitedKeys){
   }).join('');
 }
 
+/* Each kind is drawn the way it actually sits in memory:
+   - list / tuple / deque -> ONE contiguous block of adjacent slots sharing walls
+   - dict / set           -> a hash table: separate buckets, key cell -> value cell
+   - node structures       -> boxes and pointer arrows (drawn in the SVG elsewhere) */
+const KIND_LABEL = { array:'list', mapping:'dict', setview:'set', queue:'deque' };
+const KIND_NOTE = {
+  array:'contiguous slots · one after another in memory',
+  queue:'contiguous slots · grows at both ends',
+  mapping:'hash table · keys scattered into buckets',
+  setview:'hash table · membership only, no order',
+};
+
+function slotCls(hot){ return 'mslot' + (hot ? ' active' : ''); }
+
+/* contiguous: adjacent slots, shared walls, one continuous frame */
+function contiguousHtml(name, snap, isPrimary, activeKey){
+  const slots = snap.items.map((v,idx) => {
+    const hot = isPrimary && String(idx) === activeKey;
+    return `<div class="${slotCls(hot)}" data-tip="${escapeHtml(name + '[' + idx + '] = ' + v)}">` +
+      `<div class="mval">${escapeHtml(String(v))}</div>` +
+      `<div class="moff">${idx}</div></div>`;
+  }).join('');
+  const ends = snap.kind === 'queue'
+    ? ['<span class="mend">front</span>', '<span class="mend">rear</span>']
+    : ['<span class="mend">base</span>', '<span class="mend">end</span>'];
+  return `<div class="mem-run">${ends[0]}<div class="mem-strip">${slots}</div>${ends[1]}</div>`;
+}
+
+/* hash table: discrete buckets, key -> value */
+function bucketsHtml(name, snap, isPrimary, activeKey){
+  if (snap.kind === 'setview'){
+    return '<div class="mem-buckets">' + snap.items.map(v => {
+      const hot = isPrimary && String(v) === activeKey;
+      return `<div class="bucket${hot ? ' active' : ''}" data-tip="${escapeHtml(name + ' contains ' + v)}">` +
+        `<div class="bkey solo">${escapeHtml(String(v))}</div></div>`;
+    }).join('') + '</div>';
+  }
+  return '<div class="mem-buckets">' + snap.items.map(([k,v]) => {
+    const hot = isPrimary && String(k) === activeKey;
+    return `<div class="bucket${hot ? ' active' : ''}" data-tip="${escapeHtml(name + '[' + k + '] = ' + v)}">` +
+      `<div class="bkey">${escapeHtml(String(k))}</div>` +
+      `<div class="barrow">→</div>` +
+      `<div class="bval">${escapeHtml(String(v))}</div></div>`;
+  }).join('') + '</div>';
+}
+
+function flatBlockHtml(name, snap, isPrimary, activeKey){
+  const kind = snap.kind;
+  const n = snap.items.length;
+  const contiguous = kind === 'array' || kind === 'queue';
+  const body = n
+    ? (contiguous ? contiguousHtml(name, snap, isPrimary, activeKey)
+                  : bucketsHtml(name, snap, isPrimary, activeKey))
+    : '<div class="struct-empty">empty</div>';
+  return `<div class="struct-block${isPrimary ? ' primary' : ''}">` +
+    `<div class="struct-label"><b>${escapeHtml(name)}</b>` +
+    `<span class="kind">${KIND_LABEL[kind] || kind}</span>` +
+    `<span class="count">${n} item${n===1?'':'s'}</span>` +
+    `<span class="note">${KIND_NOTE[kind] || ''}</span></div>` +
+    `<div class="struct-cells">${body}</div></div>`;
+}
+
+const FLAT_KINDS = new Set(['array','queue','mapping','setview']);
+
+/* Every flat structure gets its own labelled block. The stack fully replaces the
+   old single unlabelled row, so a dict and a list that are both live both show. */
+function renderStructStack(step){
+  if (!structStack) return;
+  const flats = (step.structs || []).filter(s => FLAT_KINDS.has(s.snap.kind));
+  if (!flats.length){ structStack.innerHTML = ''; return; }
+  if (heapTreeToggle && heapTreeToggle.checked && step.struct && step.struct.kind === 'array'){
+    structStack.innerHTML = '';   // heap view takes over the canvas
+    return;
+  }
+
+  const activeKey = (step.active !== null && step.active !== undefined) ? String(step.active) : null;
+  structStack.innerHTML = flats.map(s => flatBlockHtml(s.name, s.snap, !!s.primary, activeKey)).join('');
+
+  // the stack owns the flat structures now; retire the unlabelled duplicate row
+  arrayRow.innerHTML = '';
+  arrayRow.style.display = 'none';
+
+  // a program with only flat structures still needs the canvas visible
+  clearEmptyMessage();
+}
+
 function showEmptyMessage(msg){
+  if (structStack) structStack.innerHTML = '';
   if (varRail) varRail.innerHTML = '';
   emptyMsg.textContent = msg;
   emptyMsg.style.display = 'block';
@@ -1874,7 +2098,7 @@ function clearEmptyMessage(){
    left with a null/off-picture marker. */
 function renderPointers(step){
   if (!treeSvg || treeSvg.style.display === 'none') return;
-  const ptrs = step.pointers || [];
+  const ptrs = (step.pointers || []).filter(p => p.kind !== 'drawn');
   if (!ptrs.length) return;
 
   varRail.innerHTML = '';
@@ -1967,9 +2191,10 @@ function renderStruct(step, i){
   const visitedKeys = computeVisitedSet(i);
 
   if (struct.kind === 'array' || struct.kind === 'queue' || struct.kind === 'mapping' || struct.kind === 'setview'){
-    arrayRow.style.display = 'flex';
+    // labelled blocks in #structStack own the flat structures now
+    arrayRow.innerHTML = '';
+    arrayRow.style.display = 'none';
     if (struct.kind === 'array'){
-      renderArrayRow(struct, activeKey, pathKeys, visitedKeys);
       const allNums = struct.items.length && struct.items.every(v => typeof v === 'number');
       heapToggleWrap.style.display = allNums ? 'inline-flex' : 'none';
       const showTree = allNums && heapTreeToggle.checked;
@@ -1984,9 +2209,6 @@ function renderStruct(step, i){
       heapToggleWrap.style.display = 'none';
       treeSvg.style.display = 'none';
       treeSvg.innerHTML = ''; treeSvg.removeAttribute('width'); treeSvg.removeAttribute('height');
-      if (struct.kind === 'queue') renderQueueRow(struct, activeKey, pathKeys, visitedKeys);
-      else if (struct.kind === 'mapping') renderMappingRow(struct, activeKey, pathKeys, visitedKeys);
-      else renderSetRow(struct, activeKey, pathKeys, visitedKeys);
     }
     return;
   }
@@ -2056,6 +2278,7 @@ function showStep(i){
   renderMemory(step, i > 0 ? state.steps[i-1] : null);
   renderStruct(step, i);
   renderPointers(step);
+  renderStructStack(step);
 
   // flash whatever came into existence on this step
   const created = createdKeysAt(i);
@@ -2122,8 +2345,15 @@ speedSlider.addEventListener('input', ()=>{
   speedLabel.textContent = speedSlider.value + 'ms';
   if (state.playing){ stopPlay(); startPlay(); }
 });
+/* header Run mirrors the editor's Run wherever that button currently lives */
+const runBtnTop = document.getElementById('runBtnTop');
+runBtnTop.addEventListener('click', ()=>{ if (!runBtn.disabled) runBtn.click(); });
+new MutationObserver(()=>{ runBtnTop.disabled = runBtn.disabled; })
+  .observe(runBtn, { attributes:true, attributeFilter:['disabled'] });
+runBtnTop.disabled = runBtn.disabled;
+
 heapTreeToggle.addEventListener('change', ()=>{
-  if (state.idx >= 0) renderStruct(state.steps[state.idx], state.idx);
+  if (state.idx >= 0) showStep(state.idx);
 });
 
 async function runCode(){
