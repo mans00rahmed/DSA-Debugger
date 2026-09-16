@@ -2670,19 +2670,14 @@ showEmptyMessage('paste code and hit Run to begin');
   }
 
   function localCount(){
-    var n = (parseInt(localStorage.getItem('dsdVisits') || '0', 10) || BASE);
-    if (sessionStorage.getItem('dsdVisitCounted') !== '1'){
-      n += 1;
-      localStorage.setItem('dsdVisits', String(n));
-      sessionStorage.setItem('dsdVisitCounted', '1');
-    }
+    var n = (parseInt(localStorage.getItem('dsdVisits') || '0', 10) || BASE) + 1;
+    localStorage.setItem('dsdVisits', String(n));
     show(n, 'local');
   }
 
   if (!WORKSPACE){ localCount(); return; }
 
-  var counted = sessionStorage.getItem('dsdVisitCounted') === '1';
-  var url = 'https://api.counterapi.dev/v2/' + WORKSPACE + '/' + NAME + (counted ? '' : '/up');
+  var url = 'https://api.counterapi.dev/v2/' + WORKSPACE + '/' + NAME + '/up';
   var opts = TOKEN ? { headers: { Authorization: 'Bearer ' + TOKEN } } : {};
 
   fetch(url, opts)
@@ -2690,7 +2685,6 @@ showEmptyMessage('paste code and hit Run to begin');
     .then(function(d){
       var v = d && (d.data ? (d.data.up_count != null ? d.data.up_count : d.data.value) : d.count);
       if (typeof v !== 'number') return Promise.reject('shape');
-      sessionStorage.setItem('dsdVisitCounted', '1');
       show(v + BASE, 'remote');
     })
     .catch(function(e){ console.warn('visit counter unavailable:', e); localCount(); });
