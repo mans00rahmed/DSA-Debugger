@@ -2644,50 +2644,42 @@ showEmptyMessage('paste code and hit Run to begin');
 </script>
 
 <script>
-/* ── page visit counter ────────────────────────────────────────────────
-   Static hosting (GitHub Pages) can't count hits itself, so this uses
-   CounterAPI v2 (https://counterapi.dev — free, v1 was retired Aug 2026).
-   Set WORKSPACE to your workspace name from the CounterAPI dashboard.
-   Leave it empty and the chip falls back to a per-device visit count.   */
+/* ── global page visit counter ─────────────────────────────────────────
+   Uses Abacus (https://abacus.jasoncameron.dev) — a free, no-signup hit
+   counter. Every visitor hits the same namespace/key, so the number is a
+   single shared total that only goes up. Falls back to a per-device count
+   only if the service is unreachable.                                   */
 (function(){
-  var WORKSPACE = '';                 // <- paste your counterapi.dev workspace
-  var TOKEN     = '';                 // optional: access token for private counters
-  var NAME      = 'ds-debugger-views';
-  var BASE      = 100;                // counter starts from 100
+  var NS   = 'ds-debugger';            // namespace (shared by this page)
+  var KEY  = 'tool-users';             // counter key
+  var BASE = 100;                      // displayed total starts at 100
 
-  var el  = document.getElementById('visitCount');
+  var el = document.getElementById('visitCount');
   if (!el) return;
   var num = el.querySelector('b');
   var lbl = el.querySelector('i.label');
 
-  function show(n, mode){
+  function show(n, local){
     num.textContent = Number(n).toLocaleString();
     lbl.textContent = 'people used this tool';
-    el.classList.toggle('local', mode === 'local');
-    el.title = mode === 'local'
-      ? 'counted in this browser only — add a counterapi.dev workspace for a site-wide total'
-      : 'total visits to this page';
+    el.classList.toggle('local', !!local);
+    el.title = local
+      ? 'counter service unreachable — showing this device only'
+      : 'total people who have used this tool';
   }
 
-  function localCount(){
-    var n = (parseInt(localStorage.getItem('dsdVisits') || '0', 10) || BASE) + 1;
-    localStorage.setItem('dsdVisits', String(n));
-    show(n, 'local');
-  }
-
-  if (!WORKSPACE){ localCount(); return; }
-
-  var url = 'https://api.counterapi.dev/v2/' + WORKSPACE + '/' + NAME + '/up';
-  var opts = TOKEN ? { headers: { Authorization: 'Bearer ' + TOKEN } } : {};
-
-  fetch(url, opts)
+  fetch('https://abacus.jasoncameron.dev/hit/' + NS + '/' + KEY)
     .then(function(r){ return r.ok ? r.json() : Promise.reject(r.status); })
     .then(function(d){
-      var v = d && (d.data ? (d.data.up_count != null ? d.data.up_count : d.data.value) : d.count);
-      if (typeof v !== 'number') return Promise.reject('shape');
-      show(v + BASE, 'remote');
+      if (!d || typeof d.value !== 'number') return Promise.reject('shape');
+      show(d.value + BASE, false);
     })
-    .catch(function(e){ console.warn('visit counter unavailable:', e); localCount(); });
+    .catch(function(e){
+      console.warn('global visit counter unavailable:', e);
+      var n = (parseInt(localStorage.getItem('dsdVisits') || '0', 10) || BASE) + 1;
+      localStorage.setItem('dsdVisits', String(n));
+      show(n, true);
+    });
 })();
 </script>
 </body>
